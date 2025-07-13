@@ -1,0 +1,152 @@
+---
+title: "IR_Specialist_AbdallaElgharbawy"
+author: "Abdalla Elgharbawy"
+date: "2025-04-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+## Task Execution
+
+### Step 1: Read Extracted CSV and Display Data
+
+```{r}
+families <- read.csv("families.csv", header = FALSE, sep = ",", quote = "\"", fill = TRUE) 
+colnames(families) <- c("FamilyName", "Description")
+head(families)
+```
+
+### Step 2: Load Required Libraries
+
+```{r}
+library(readr)
+library(textstem)
+library(tm)
+library(stringr)
+library(wordcloud)
+library(tidytext)
+library(tidyverse)
+```
+
+### Step 3: Text Preprocessing
+
+```{r}
+corpus <- VCorpus(VectorSource(families$Description))
+
+preprocess_text <- function(corpus) {
+  corpus <- tm_map(corpus, content_transformer(tolower))
+  corpus <- tm_map(corpus, removePunctuation)
+  corpus <- tm_map(corpus, removeWords, stopwords("english"))
+  corpus <- tm_map(corpus, stripWhitespace)
+  corpus <- tm_map(corpus, content_transformer(lemmatize_strings))
+  return(corpus)
+}
+
+corpus <- preprocess_text(corpus)
+```
+
+### Step 4: Create TF-IDF Matrix
+
+```{r}
+tdm <- TermDocumentMatrix(corpus)
+tdm_matrix <- as.matrix(tdm)
+dtm_matrix <- t(tdm_matrix)
+
+tf <- dtm_matrix / rowSums(dtm_matrix)
+idf <- log(nrow(dtm_matrix) / colSums(dtm_matrix > 0))
+tfidf <- tf %*% diag(idf)
+tfidf_df <- as.data.frame(tfidf)
+colnames(tfidf_df) <- colnames(dtm_matrix)
+
+dim(tfidf_df)
+```
+
+### Step 5: Sparsity Analysis
+
+```{r}
+total_elements <- nrow(tfidf_df) * ncol(tfidf_df)
+non_zero_elements <- sum(tfidf_df != 0)
+sparsity <- 1 - (non_zero_elements / total_elements)
+cat("Sparsity of the TF-IDF matrix:", round(sparsity * 100, 2), "%\n")
+```
+
+### Step 6: Cosine Similarity with Apocynaceae
+
+```{r}
+library(lsa)
+apocynaceae_index <- which(families$FamilyName == "Apocynaceae")
+apocynaceae_vector <- as.numeric(tfidf_df[apocynaceae_index, ])
+
+similarities <- apply(tfidf_df, 1, function(x) cosine(apocynaceae_vector, as.numeric(x)))
+similarity_df <- data.frame(FamilyName = families$FamilyName, cosinesimilarity = similarities)
+similar_families <- similarity_df[order(-similarity_df$cosinesimilarity), ]
+head(similar_families, 5)
+```
+
+### Step 7: Visualize Top 5 Most Similar Families
+
+```{r}
+top5 <- head(similar_families, 5)
+barplot(top5$cosinesimilarity,
+        names.arg = top5$FamilyName,
+        main = "Top 5 Families similar to Apocynaceae",
+        ylab = "Cosine Similarity",
+        las = 2,
+        col = "skyblue",
+        cex.names = 0.8)
+```
+
+### Additional Insight #1: Get Top 10 TF-IDF Terms for Apocynaceae
+
+```{r}
+terms <- colnames(tfidf_df)
+apocynaceae_terms <- as.numeric(tfidf_df[apocynaceae_index, ])
+names(apocynaceae_terms) <- terms
+top10_terms <- sort(apocynaceae_terms, decreasing = TRUE)[1:10]
+print(top10_terms)
+```
+
+### Additional Insight #2: Cosine Similarity Heatmap
+
+```{r}
+library(text2vec)
+similarity_matrix <- sim2(as.matrix(tfidf_df), method = "cosine", norm = "l2")
+similarity_matrix <- round(similarity_matrix, 2)
+rownames(similarity_matrix) <- families$FamilyName
+colnames(similarity_matrix) <- families$FamilyName
+
+library(pheatmap)
+pheatmap(similarity_matrix,
+         main = "Cosine Similarity Heat-map of Plant Families",
+         fontsize_row = 6,
+         fontsize_col = 6,
+         color = colorRampPalette(c("White", "skyblue", "darkblue"))(100),
+         border_color = NA)
+```
+
+## Assumptions and Challenges
+
+The R package version compatibility became one of the main hurdles in this project. At first, I tried to carry on with the work on R Studio Desktop on my personal laptop, which had R version 4.1. Because of that, I ran into trouble installing and using the packages rmarkdown, knitr, and others that were required for the final rendering of the report into HTML format. Despite various attempts to install the dependencies, I could not knit the R Markdown file on that particular setup. 
+
+So, I opted for Posit Cloud, which is running the latest version of R Studio (version 4.4.3). This environment already contained the tools required for the analyses in this project and allowed me to install all packages free of version conflicts. Essentially, it eased the whole process, and I managed to produce the HTML report as required. 
+
+In addition, I assumed that the family descriptions extracted from the XML file were clean and properly formatted, which was vital for the correct calculation of TF-IDF scores and cosine similarity metrics. I have also taken the stance that lemmatization should suffice to reduce terms to their root forms without stemming.
+
+## Conclusion
+
+In this project, I demonstrated how text mining techniques can be applied to botanical family descriptions in order to show semantic relationships. In proceeding with the extracted dataset, I performed multiple text preprocessing techniques, including lowercasing, punctuation removal, stop-word filtering, and lemmatization, in order to prepare the data for meaningful analysis.
+
+Thus, by constructing a TF-IDF matrix, I was able to quantitatively evaluate the importance of terms across families. The resulting TF-IDF matrix was of size 31 × 104 with a sparsity of 93.58%, which is characteristically what generally happens in text data, where most of the terms are not shared by all documents.
+
+From this matrix, I then took the 10 highest TF-IDF terms pertaining to the Apocynaceae family - these being the words that, for the purposes of this corpus, are most unique and descriptive to it. It also included computing cosine similarity between Apocynaceae and other families to find out which are the most similar (like Boraginaceae, Asparagaceae, and Myrtaceae), and then visualized the top 5 using a bar plot and all pairwise similarities using a heatmap.
+
+This would give further evidence of how non-natural language-derived descriptions can indeed be converted into numerical representational forms for quantitative similarity analysis to reveal even descriptive, non-structured relationships.
